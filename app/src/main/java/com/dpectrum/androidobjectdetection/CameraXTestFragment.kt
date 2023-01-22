@@ -1,9 +1,9 @@
 package com.dpectrum.androidobjectdetection
 
 import android.Manifest
-import android.graphics.Bitmap
-import android.graphics.ImageDecoder
+import android.graphics.*
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -13,32 +13,30 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.LifecycleOwner
 import com.dpectrum.androidobjectdetection.databinding.FragmentCameraxTestBinding
-import com.google.common.util.concurrent.ListenableFuture
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.objects.ObjectDetection
-import com.google.mlkit.vision.objects.ObjectDetector
-import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
-class CameraXTestFragment:Fragment() {
+import kotlinx.coroutines.*
+import org.tensorflow.lite.support.image.TensorImage
+import org.tensorflow.lite.task.vision.detector.Detection
+import org.tensorflow.lite.task.vision.detector.ObjectDetector
 
-    private var _binding:FragmentCameraxTestBinding?=null
-    private val binding:FragmentCameraxTestBinding
-        get()=_binding!!
+class CameraXTestFragment : Fragment() {
 
-    private val option=ObjectDetectorOptions.Builder()
-        .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
-        .enableMultipleObjects()
-        .enableClassification()
+    private var _binding: FragmentCameraxTestBinding? = null
+    private val binding: FragmentCameraxTestBinding
+        get() = _binding!!
+
+    private val option = ObjectDetector.ObjectDetectorOptions.builder()
+        .setMaxResults(5)
+        .setScoreThreshold(0.5f)
         .build()
 
-    private val objectDetector:ObjectDetector by lazy {
-        ObjectDetection.getClient(option)
+    private val objectDetector: ObjectDetector by lazy {
+        ObjectDetector.createFromFileAndOptions(
+            requireContext(), // the application context
+            "model.tflite", // must be same as the filename in assets folder
+            option
+        )
     }
 
     override fun onCreateView(
@@ -46,14 +44,16 @@ class CameraXTestFragment:Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        _binding=FragmentCameraxTestBinding.inflate(layoutInflater,container,false)
+        _binding = FragmentCameraxTestBinding.inflate(layoutInflater, container, false)
 
         permissionLauncher.launch(permissions)
         CoroutineScope(Dispatchers.IO).launch {
-            while (isActive){
-                binding.prevView.bitmap?.let {
-
+            while (isActive) {
+                val bitmap = withContext(Dispatchers.Main) {
+                    binding.prevView.bitmap
                 }
+                detectObject(bitmap)
+
             }
         }
         return binding.root
@@ -62,9 +62,8 @@ class CameraXTestFragment:Fragment() {
 
     override fun onDestroy() {
         super.onDestroy()
-        _binding=null
+        _binding = null
     }
-
 
 
     private fun startCamera() {
@@ -90,32 +89,107 @@ class CameraXTestFragment:Fragment() {
 
                 // Bind use cases to camera
                 cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview)
+                    this, cameraSelector, preview
+                )
 
-            } catch(exc: Exception) {
+            } catch (exc: Exception) {
 
             }
 
         }, ContextCompat.getMainExecutor(requireContext()))
     }
 
-    private val permissionLauncher=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){
-        it.values.forEach { isGranted->
-            if(!isGranted)
-                return@registerForActivityResult
+    private val permissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            it.values.forEach { isGranted ->
+                if (!isGranted)
+                    return@registerForActivityResult
+            }
+            startCamera()
         }
-        startCamera()
+
+    private val permissions = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+
+    private fun detectObject(bitmap: Bitmap?) {
+        bitmap?.let {
+            val image = TensorImage.fromBitmap(bitmap)
+            val result = objectDetector.detect(image)
+            debugPrint(result)
+            val resultToDisplay = result.map {
+                // Get the top-1 category and craft the display text
+                val category = it.categories.first()
+                val text = "${category.label}, ${category.score.times(100).toInt()}%"
+
+                // Create a data object to display the detection result
+                DetectionResult(it.boundingBox, text)
+            }
+// Draw the detection result on the bitmap and show it.
+            val imgWithResult = drawDetectionResult(bitmap, resultToDisplay)
+            CoroutineScope(Dispatchers.Main).launch {
+                binding.imageView.setImageBitmap(imgWithResult)
+            }
+
+        }
     }
 
-    private val permissions=arrayOf(Manifest.permission.CAMERA,Manifest.permission.RECORD_AUDIO)
+    private fun debugPrint(results: List<Detection>) {
+        for ((i, obj) in results.withIndex()) {
+            val box = obj.boundingBox
 
-    private fun detectObject(bitmap: Bitmap?){
-        bitmap?.let {
-            val image=InputImage.fromBitmap(bitmap,0)
-            objectDetector.process(image).addOnSuccessListener {
+            Log.d("test", "Detected object: ${i} ")
+            Log.d("test", "  boundingBox: (${box.left}, ${box.top}) - (${box.right},${box.bottom})")
 
+            for ((j, category) in obj.categories.withIndex()) {
+                Log.d("test", "    Label $j: ${category.label}")
+                val confidence: Int = category.score.times(100).toInt()
+                Log.d("test", "    Confidence: ${confidence}%")
             }
         }
     }
 
+    data class BoxWithText(val box: Rect, val text: String)
+
+    private fun drawDetectionResult(
+        bitmap: Bitmap,
+        detectionResults: List<DetectionResult>
+    ): Bitmap {
+        val outputBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(outputBitmap)
+        val pen = Paint()
+        pen.textAlign = Paint.Align.LEFT
+
+        detectionResults.forEach {
+            // draw bounding box
+            pen.color = Color.RED
+            pen.strokeWidth = 8F
+            pen.style = Paint.Style.STROKE
+            val box = it.boundingBox
+            canvas.drawRect(box, pen)
+
+
+            val tagSize = Rect(0, 0, 0, 0)
+
+            // calculate the right font size
+            pen.style = Paint.Style.FILL_AND_STROKE
+            pen.color = Color.YELLOW
+            pen.strokeWidth = 2F
+
+            pen.textSize = 25f
+            pen.getTextBounds(it.text, 0, it.text.length, tagSize)
+            val fontSize: Float = pen.textSize * box.width() / tagSize.width()
+
+            // adjust the font size so texts are inside the bounding box
+            if (fontSize < pen.textSize) pen.textSize = fontSize
+
+            var margin = (box.width() - tagSize.width()) / 2.0F
+            if (margin < 0F) margin = 0F
+            canvas.drawText(
+                it.text, box.left + margin,
+                box.top + tagSize.height().times(1F), pen
+            )
+        }
+        return outputBitmap
+    }
 }
+
+data class DetectionResult(val boundingBox: RectF, val text: String)
