@@ -1,6 +1,8 @@
 package com.dpectrum.androidobjectdetection
 
 import android.Manifest
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -14,6 +16,10 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.LifecycleOwner
 import com.dpectrum.androidobjectdetection.databinding.FragmentCameraxTestBinding
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.objects.ObjectDetection
+import com.google.mlkit.vision.objects.ObjectDetector
+import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
@@ -25,6 +31,15 @@ class CameraXTestFragment:Fragment() {
     private val binding:FragmentCameraxTestBinding
         get()=_binding!!
 
+    private val option=ObjectDetectorOptions.Builder()
+        .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
+        .enableMultipleObjects()
+        .enableClassification()
+        .build()
+
+    private val objectDetector:ObjectDetector by lazy {
+        ObjectDetection.getClient(option)
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -93,5 +108,14 @@ class CameraXTestFragment:Fragment() {
     }
 
     private val permissions=arrayOf(Manifest.permission.CAMERA,Manifest.permission.RECORD_AUDIO)
+
+    private fun detectObject(bitmap: Bitmap?){
+        bitmap?.let {
+            val image=InputImage.fromBitmap(bitmap,0)
+            objectDetector.process(image).addOnSuccessListener {
+
+            }
+        }
+    }
 
 }
