@@ -34,7 +34,7 @@ class CameraXTestFragment : Fragment() {
     private val objectDetector: ObjectDetector by lazy {
         ObjectDetector.createFromFileAndOptions(
             requireContext(), // the application context
-            "model.tflite", // must be same as the filename in assets folder
+            "model_v2.tflite", // must be same as the filename in assets folder
             option
         )
     }
