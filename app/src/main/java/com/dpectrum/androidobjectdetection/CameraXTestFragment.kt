@@ -28,7 +28,7 @@ class CameraXTestFragment : Fragment() {
 
     private val option = ObjectDetector.ObjectDetectorOptions.builder()
         .setMaxResults(5)
-        .setScoreThreshold(0.5f)
+        .setScoreThreshold(0.6f)
         .build()
 
     private val objectDetector: ObjectDetector by lazy {
