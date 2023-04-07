@@ -10,3 +10,8 @@
 
 아래에는 결과 화면 입니다.
 
+<br/>
+
+<br/>
+
+![ezgif com-video-to-gif (1)](https://user-images.githubusercontent.com/53536205/230610267-3766a41a-ed95-4839-8d6a-92c82d809684.gif)
